@@ -1,0 +1,663 @@
+#include<opencv2/opencv.hpp>
+#include<opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#include<math.h>
+#include<stdio.h>
+#include<iostream>
+#include<vector>
+#include<cmath>
+#define M_PI 3.14159265358979323846
+using namespace cv;
+using namespace std;
+
+
+
+
+
+Mat forier(Mat src)
+{
+	Mat ext(src.rows * 2, src.cols * 2, CV_8UC1, Scalar(0, 0, 0));
+	Mat shift(src.rows * 2, src.cols * 2, CV_32FC1, Scalar(0, 0, 0));
+	Mat f(src.rows * 2, src.cols * 2, CV_32FC1, Scalar(0, 0, 0));
+	double sum = 0;
+	for (int i = 0; i < src.rows; i++)
+	{
+		for (int j = 0; j < src.cols; j++)
+		{
+			ext.at<uchar>(i, j) = src.at<uchar>(i, j);
+		}
+	}
+
+	for (int i = 0; i < shift.rows; i++)
+	{
+		for (int j = 0; j < shift.cols; j++)
+		{
+			float a = float(ext.at<uchar>(i, j));
+			//if ((i + j) % 2 > 0.1) shift.at<float>(i, j) = (-1)*a;
+			//if ((i + j) % 2 <= 0.1) shift.at<float>(i, j) = a;
+			shift.at<float>(i, j) = pow(-1, i + j)*a;
+		}
+	}
+	Mat complexI;
+	Mat planes[] = { shift, Mat::zeros(shift.size(), CV_32F) };
+	merge(planes, 2, complexI);
+	dft(complexI, complexI);
+	return complexI;
+}
+
+Mat iforier(Mat complexI)
+{
+	Mat ifft;
+	Mat src1(complexI.rows / 2, complexI.cols / 2, CV_8UC1);
+	idft(complexI, ifft, DFT_SCALE|DFT_REAL_OUTPUT);
+	for (int i = 0; i < ifft.rows; i++)
+	{
+		for (int j = 0; j < ifft.cols; j++)
+		{
+			float a = float(ifft.at<float>(i, j));
+			//if ((i + j) % 2 > 0.1) shift.at<float>(i, j) = (-1)*a;
+			//if ((i + j) % 2 <= 0.1) shift.at<float>(i, j) = a;
+			ifft.at<float>(i, j) = pow(-1, i + j)*a;
+		}
+	}	
+
+	normalize(ifft, ifft, 0, 255, CV_MINMAX);
+	//ifft.convertTo(ifft, CV_8UC1);
+
+
+	for (int i = 0; i < src1.rows; i++)
+	{
+		for (int j = 0; j < src1.cols; j++)
+		{
+			src1.at<uchar>(i, j) = ifft.at<float>(i, j);
+		}
+	}
+	return src1;
+}
+
+Mat buttworth(Mat src, int n, int d0, bool flag)
+{
+	Mat but;
+	Mat complex = forier(src);
+	if (flag)
+	{
+
+		for (int i = 0; i < complex.rows; i++)
+		{
+			for (int j = 0; j < complex.cols; j++)
+			{
+
+				complex.at<Vec2f>(i, j)[0] = complex.at<Vec2f>(i, j)[0] / (1 + pow(sqrt((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / d0, 2 * n));
+				complex.at<Vec2f>(i, j)[1] = complex.at<Vec2f>(i, j)[1] / (1 + pow(sqrt((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / d0, 2 * n));
+
+			}
+		}
+		but = iforier(complex);
+	}
+	else
+	{
+		for (int i = 0; i < complex.rows; i++)
+		{
+			for (int j = 0; j < complex.cols; j++)
+			{
+
+				complex.at<Vec2f>(i, j)[0] = complex.at<Vec2f>(i, j)[0] / (1 + pow(d0 / sqrt((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)), 2 * n));
+				complex.at<Vec2f>(i, j)[1] = complex.at<Vec2f>(i, j)[1] / (1 + pow(d0 / sqrt((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)), 2 * n));
+
+			}
+		}
+		but = iforier(complex);
+	}
+	return but;
+}
+
+Mat pgaussian(Mat src, float delta, bool flag)
+{
+	Mat complex = forier(src);
+	Mat gaus;
+	if (flag)
+	{
+
+		for (int i = 0; i < complex.rows; i++)
+		{
+			for (int j = 0; j < complex.cols; j++)
+			{
+				complex.at<Vec2f>(i, j)[0] = complex.at<Vec2f>(i, j)[0] * exp((-1)*(((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / (2 * delta*delta)));
+				complex.at<Vec2f>(i, j)[1] = complex.at<Vec2f>(i, j)[1] * exp((-1)*(((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / (2 * delta*delta)));
+
+			}
+		}
+		gaus = iforier(complex);
+	}
+	else
+	{
+
+		for (int i = 0; i < complex.rows; i++)
+		{
+			for (int j = 0; j < complex.cols; j++)
+			{
+				complex.at<Vec2f>(i, j)[0] = complex.at<Vec2f>(i, j)[0] * (1 - exp((-1)*(((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / (2 * delta*delta))));
+				complex.at<Vec2f>(i, j)[1] = complex.at<Vec2f>(i, j)[1] * (1 - exp((-1)*(((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / (2 * delta*delta))));
+
+			}
+		}
+		gaus = iforier(complex);
+	}
+
+	return gaus;
+}
+
+Mat getmask(int size, float delta)
+{
+	Mat mask(size, size, CV_32FC1, Scalar(0, 0, 0));
+	for (int i = 0; i < size; i++)
+	{
+		for (int j = 0; j < size; j++)
+		{
+			mask.at<float>(i, j) = exp(-1 * ((i - (size - 1) / 2)*(i - (size - 1) / 2) + (j - (size - 1) / 2)*(j - (size - 1) / 2)) / (2 * delta*delta)) / (2 * M_PI*delta*delta);
+		}
+	}
+	return mask;
+}
+
+
+Mat extend(Mat src, int n)
+{
+	Mat dst(src.rows + 2 * n, src.cols + 2 * n, CV_8UC1, Scalar(0, 0, 0));
+	for (int i = n; i < dst.rows - n; i++)
+	{
+		for (int j = n; j < dst.cols - n; j++)
+		{
+			dst.at<uchar>(i, j) = src.at<uchar>(i - n, j - n);
+		}
+	}
+	return dst;
+}
+
+Mat gaussian(Mat src, int size, float delta)
+{
+	Mat mask = getmask(size, delta);
+	Mat ext = extend(src, size - 1);
+	Mat dst1(ext.rows, ext.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst2(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+
+	for (int i = (size - 1) / 2; i < ext.rows - (size - 1) / 2; i++)
+	{
+		for (int j = (size - 1) / 2; j < ext.cols - (size - 1) / 2; j++)
+		{
+			uchar sum = 0;
+			for (int a = 0; a < size; a++)
+			{
+				for (int b = 0; b < size; b++)
+				{
+					int ix = a - (size - 1) / 2;
+					int jy = b - (size - 1) / 2;
+					sum = sum + mask.at<float>(a, b)*ext.at<uchar>(i + ix, j + jy);
+				}
+			}
+			dst1.at<uchar>(i, j) = sum;
+		}
+	}
+	for (int i = 0; i < src.rows; i++)
+	{
+		for (int j = 0; j < src.cols; j++)
+		{
+			dst2.at<uchar>(i, j) = dst1.at<uchar>(i + size - 1, j + size - 1);
+		}
+	}
+	return dst2;
+}
+
+Mat medium(Mat src, int size)
+{
+	Mat ext = extend(src, size - 1);
+	Mat dst(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst1(ext.rows, ext.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst2(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+
+	for (int i = (size - 1) / 2; i < ext.rows - (size - 1) / 2; i++)
+	{
+		for (int j = (size - 1) / 2; j < ext.cols - (size - 1) / 2; j++)
+		{
+			uchar sum = 0;
+			for (int a = 0; a < size; a++)
+			{
+				for (int b = 0; b < size; b++)
+				{
+					int ix = a - (size - 1) / 2;
+					int jy = b - (size - 1) / 2;
+					sum = sum + ext.at<uchar>(i + ix, j + jy) / (size*size);
+				}
+			}
+			dst1.at<uchar>(i, j) = sum;
+		}
+	}
+	for (int i = 0; i < src.rows; i++)
+	{
+		for (int j = 0; j < src.cols; j++)
+		{
+			dst2.at<uchar>(i, j) = dst1.at<uchar>(i + size - 1, j + size - 1);
+		}
+	}
+	return dst2;
+}
+
+double producegauss(double m, double sigma)
+{
+	const double little = std::numeric_limits<double>::min();
+	double z, u1, u2;
+	u1 = rand() / RAND_MAX;
+	u2 = rand() / RAND_MAX;
+	while (u1 <= little)
+	{
+		u1 = rand() *(1.0 / RAND_MAX);
+		u2 = rand() *(1.0 / RAND_MAX);
+	}
+	z = sqrt(-2 * log(u1))*cos(2 * CV_PI*u2);
+	return z*sigma + m;
+
+}
+
+Mat plusgauss(Mat src, double m, double sigma)
+{
+	Mat result = src.clone();
+	for (int i = 0; i < result.rows; i++)
+	{
+		for (int j = 0; j < result.cols; j++)
+		{
+			int a = src.at<uchar>(i, j) + producegauss(m, sigma)*30;
+			if (a < 0) a = 0;
+			if (a > 255) a = 255;
+			result.at<uchar>(i, j) = uchar(a);
+		}
+	}
+	return result;
+}
+
+Mat addgauss(Mat src,double mean,double delta)
+{
+	Mat result;
+	Mat noise(src.size(), src.type());
+	RNG rng(time(NULL));
+	rng.fill(noise, RNG::NORMAL, mean, delta);
+	cv::add(src, noise, result);
+	return result;
+}
+
+void salt(Mat &src, double port)
+{
+	int num = src.rows*src.cols*port;
+	for (int t = 0; t < num; t++)
+	{
+		int i = rand() % src.rows;
+		int j = rand() % src.cols;
+		src.at<uchar>(i, j) = 255;
+	}
+}
+
+void pepper(Mat &src, double port)
+{
+	int num = src.rows*src.cols*port;
+	for (int t = 0; t < num; t++)
+	{
+		int i = rand() % src.rows;
+		int j = rand() % src.cols;
+		src.at<uchar>(i, j) = 0;
+	}
+}
+
+Mat pep_salt(Mat src, double port)
+{
+	Mat result = src.clone();
+	salt(result, port);
+	pepper(result, port);
+	return result;
+}
+
+Mat inversemean(Mat src, int size, double q)
+{
+	Mat ext = extend(src, size - 1);
+	Mat dst(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst1(ext.rows, ext.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst2(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+
+	for (int i = (size - 1) / 2; i < ext.rows - (size - 1) / 2; i++)
+	{
+		for (int j = (size - 1) / 2; j < ext.cols - (size - 1) / 2; j++)
+		{
+			double sum1 = 0, sum2 = 0;
+			for (int a = 0; a < size; a++)
+			{
+				for (int b = 0; b < size; b++)
+				{
+					int ix = a - (size - 1) / 2;
+					int jy = b - (size - 1) / 2;
+					sum1 = sum1 + pow(double(ext.at<uchar>(i + ix, j + jy)), q + 1);
+					sum2 = sum2 + pow(double(ext.at<uchar>(i + ix, j + jy)), q);
+				}
+			}
+			double p = sum1 / sum2;
+			if (p>255) p = 255;
+			if (p < 0) p = 0;
+			dst1.at<uchar>(i, j) = uchar(p);
+		}
+	}
+	for (int i = 0; i < src.rows; i++)
+	{
+		for (int j = 0; j < src.cols; j++)
+		{
+			dst2.at<uchar>(i, j) = dst1.at<uchar>(i + size - 1, j + size - 1);
+		}
+	}
+	return dst2;
+}
+
+
+Mat moveblur(Mat src, double a, double b, double T, double mean, double delta)
+{
+	Mat complex = forier(src);
+	Mat planes(Mat::zeros(CvSize(src.cols * 2, src.rows * 2), CV_32FC2));
+	Mat planes1(Mat::zeros(CvSize(src.cols * 2, src.rows * 2), CV_32FC2));
+	Mat none(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat gnoise = addgauss(none, mean, delta);
+	Mat Gnoise = forier(gnoise);
+	for (int i = 0; i < planes.rows; i++)
+	{
+		for (int j = 0; j < planes.cols; j++)
+		{
+			int ii = i - planes.rows / 2;
+			int jj = j - planes.cols / 2;
+			double m = CV_PI*(ii*a + jj*b) + 1e-10;
+			planes.at<Vec2f>(i, j)[0] = (T / m)*sin(m)*cos(m);
+			planes.at<Vec2f>(i, j)[1] = (-1) * (T / m)*sin(m)*sin(m);
+		}
+	}
+	for (int i = 0; i < planes.rows; i++)
+	{
+		for (int j = 0; j < planes.cols; j++)
+		{
+			
+			planes1.at<Vec2f>(i, j)[0] = planes.at<Vec2f>(i, j)[0] * complex.at<Vec2f>(i, j)[0] - planes.at<Vec2f>(i, j)[1] * complex.at<Vec2f>(i, j)[1] + Gnoise.at<Vec2f>(i, j)[0];
+			planes1.at<Vec2f>(i, j)[1] = planes.at<Vec2f>(i, j)[0] * complex.at<Vec2f>(i, j)[1] + planes.at<Vec2f>(i, j)[1] * complex.at<Vec2f>(i, j)[0] + Gnoise.at<Vec2f>(i, j)[1];
+		}
+	}
+
+	Mat result = iforier(planes1);
+	return result;
+}
+
+Mat dowiner(Mat src, double k, double a, double b, double T, double mean, double delta)
+{
+	Mat complex = forier(src);
+	Mat planes2(Mat::zeros(CvSize(src.cols * 2, src.rows * 2), CV_32FC2));
+	Mat planes1(Mat::zeros(CvSize(src.cols * 2, src.rows * 2), CV_32FC2));
+	Mat none(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat gnoise = addgauss(none, mean, delta);
+	Mat Gnoise = forier(gnoise);
+	for (int i = 0; i < planes2.rows; i++)
+	{
+		for (int j = 0; j < planes2.cols; j++)
+		{
+			int ii = i - planes2.rows / 2;
+			int jj = j - planes2.cols / 2;
+			double m = CV_PI*(ii*a + jj*b) + 1e-10;
+			planes2.at<Vec2f>(i, j)[0] = (T / m)*sin(m)*cos(m);
+			planes2.at<Vec2f>(i, j)[1] = (-1) * (T / m)*sin(m)*sin(m);
+		}
+	}
+	for (int i = 0; i < planes2.rows; i++)
+	{
+		for (int j = 0; j < planes2.cols; j++)
+		{
+
+			planes1.at<Vec2f>(i, j)[0] = planes2.at<Vec2f>(i, j)[0] * complex.at<Vec2f>(i, j)[0] - planes2.at<Vec2f>(i, j)[1] * complex.at<Vec2f>(i, j)[1] + Gnoise.at<Vec2f>(i, j)[0];
+			planes1.at<Vec2f>(i, j)[1] = planes2.at<Vec2f>(i, j)[0] * complex.at<Vec2f>(i, j)[1] + planes2.at<Vec2f>(i, j)[1] * complex.at<Vec2f>(i, j)[0] + Gnoise.at<Vec2f>(i, j)[1];
+		}
+	}
+	Mat G = planes1;
+	Mat copy = G.clone();
+	Mat planes(Mat::zeros(CvSize(src.cols * 2, src.rows * 2), CV_32FC2));
+	for (int i = 0; i < planes.rows; i++)
+	{
+		for (int j = 0; j < planes.cols; j++)
+		{
+			int ii = i - planes.rows / 2;
+			int jj = j - planes.cols / 2;
+			double m = CV_PI*(ii*a + jj*b) + 1e-10;
+			double dominator = T*T*sin(m)*sin(m) + k*m*m;
+			planes.at<Vec2f>(i, j)[0] = (T*m*sin(m)*cos(m)) / dominator;
+			planes.at<Vec2f>(i, j)[1] = (T*m*sin(m)*sin(m)) / dominator;
+		}
+	}
+	for (int i = 0; i < planes.rows; i++)
+	{
+		for (int j = 0; j < planes.cols; j++)
+		{
+
+			G.at<Vec2f>(i, j)[0] = planes.at<Vec2f>(i, j)[0] * copy.at<Vec2f>(i, j)[0] - planes.at<Vec2f>(i, j)[1] * copy.at<Vec2f>(i, j)[1];
+			G.at<Vec2f>(i, j)[1] = planes.at<Vec2f>(i, j)[0] * copy.at<Vec2f>(i, j)[1] + planes.at<Vec2f>(i, j)[1] * copy.at<Vec2f>(i, j)[0];
+		}
+	}
+	Mat result = iforier(G);
+	return result;
+}
+
+
+
+Mat rewiner(Mat src, double threshold, double k, double a, double b, double T, double length, double mean, double delta)
+{
+	int n = 1;
+	Mat winer = dowiner(src, k, a, b, T,mean,delta);
+	Mat win = winer.clone();
+	double mse = 0, sum = 0,snr=0;
+	double kchange = k;
+	vector<double> SNR;
+	for (int i = 0; i < src.rows; i++)
+	{
+		for (int j = 0; j < src.cols; j++)
+		{
+			sum += pow(double(src.at<uchar>(i, j)) - double(winer.at<uchar>(i, j)), 2);
+		}
+	}
+	mse = sum / (src.rows*src.cols);
+	if (mse < threshold)
+	{
+		cout << k;
+		return win;
+	}
+	else
+	{
+		
+		while (mse >= threshold&&kchange >= 0)
+		{
+			kchange = kchange - length;
+		    win = dowiner(src, kchange, a, b, T,mean,delta);
+			mse = 0;
+			sum = 0;
+			snr = 0;
+			for (int i = 0; i < src.rows; i++)
+			{
+				for (int j = 0; j < src.cols; j++)
+				{
+					sum += pow(src.at<uchar>(i, j) - win.at<uchar>(i, j), 2);
+				}
+			}
+			mse = sum / (src.rows*src.cols);
+			SNR.push_back(mse);
+			cout<<"k="<<kchange<<":" << mse<<' '<<n++<<'\n';
+		}
+		std::vector<double>::iterator least = std::min_element(std::begin(SNR), std::end(SNR));
+		cout << "the least is:" << *least << " at position " << std::distance(std::begin(SNR), least)<< '\n';
+		cout << kchange;
+		return win;
+	}
+}
+
+Mat doleast(Mat src, double gama, double a, double b, double T, double mean, double delta)
+{
+	Mat complex = forier(src);
+	Mat planes2(Mat::zeros(CvSize(src.cols * 2, src.rows * 2), CV_32FC2));
+	Mat planes1(Mat::zeros(CvSize(src.cols * 2, src.rows * 2), CV_32FC2));
+	Mat none(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat gnoise = addgauss(none, mean, delta);
+	Mat Gnoise = forier(gnoise);
+	for (int i = 0; i < planes2.rows; i++)
+	{
+		for (int j = 0; j < planes2.cols; j++)
+		{
+			int ii = i - planes2.rows / 2;
+			int jj = j - planes2.cols / 2;
+			double m = CV_PI*(ii*a + jj*b) + 1e-10;
+			planes2.at<Vec2f>(i, j)[0] = (T / m)*sin(m)*cos(m);
+			planes2.at<Vec2f>(i, j)[1] = (-1) * (T / m)*sin(m)*sin(m);
+		}
+	}
+	for (int i = 0; i < planes2.rows; i++)
+	{
+		for (int j = 0; j < planes2.cols; j++)
+		{
+
+			planes1.at<Vec2f>(i, j)[0] = planes2.at<Vec2f>(i, j)[0] * complex.at<Vec2f>(i, j)[0] - planes2.at<Vec2f>(i, j)[1] * complex.at<Vec2f>(i, j)[1] + Gnoise.at<Vec2f>(i, j)[0];
+			planes1.at<Vec2f>(i, j)[1] = planes2.at<Vec2f>(i, j)[0] * complex.at<Vec2f>(i, j)[1] + planes2.at<Vec2f>(i, j)[1] * complex.at<Vec2f>(i, j)[0] + Gnoise.at<Vec2f>(i, j)[1];
+		}
+	}
+	Mat G = planes1;
+	Mat copy = G.clone();
+	Mat planes(Mat::zeros(CvSize(src.cols * 2, src.rows * 2), CV_32FC2));
+	Mat p(src.rows, src.cols, CV_32FC1, CvScalar(0, 0, 0));
+	p.at<float>(0, 0) = 0; p.at<float>(0, 1) = -1; p.at<float>(0, 2) = 0;
+	p.at<float>(1, 0) = -1; p.at<float>(1, 1) = 4; p.at<float>(1, 2) = -1;
+	p.at<float>(2, 0) = 0; p.at<float>(2, 1) = -1; p.at<float>(2, 2) = 0;
+	Mat ext(p.rows * 2, p.cols * 2, CV_32FC1, Scalar(0, 0, 0));
+	Mat shift = ext.clone();
+	for (int i = 0; i < p.rows; i++)
+	{
+		for (int j = 0; j < p.cols; j++)
+		{
+			ext.at<float>(i, j) = p.at<float>(i, j);
+		}
+	}
+	for (int i = 0; i < ext.rows; i++)
+	{
+		for (int j = 0; j < ext.cols; j++)
+		{
+			shift.at<float>(i, j) = pow(-1, i + j)*ext.at<float>(i, j);
+		}
+	}
+	Mat P;
+	Mat planes3[] = { shift, Mat::zeros(shift.size(), CV_32F) };
+	merge(planes3, 2, P);
+	dft(P, P);
+	for (int i = 0; i < planes.rows; i++)
+	{
+		for (int j = 0; j < planes.cols; j++)
+		{
+			int ii = i - planes.rows / 2;
+			int jj = j - planes.cols / 2;
+			double m = CV_PI*(ii*a + jj*b) + 1e-10;
+			double dom = T*T*sin(m)*sin(m) + m*m*gama*(pow(P.at<Vec2f>(i, j)[0], 2) + pow(P.at<Vec2f>(i, j)[1], 2));
+			planes.at<Vec2f>(i, j)[0] = m*T*sin(m)*cos(m) / dom;
+			planes.at<Vec2f>(i, j)[1] = m*T*sin(m)*sin(m) / dom;
+		}
+	}
+	for (int i = 0; i < planes.rows; i++)
+	{
+		for (int j = 0; j < planes.cols; j++)
+		{
+
+			planes1.at<Vec2f>(i, j)[0] = planes.at<Vec2f>(i, j)[0] * copy.at<Vec2f>(i, j)[0] - planes.at<Vec2f>(i, j)[1] * copy.at<Vec2f>(i, j)[1];
+			planes1.at<Vec2f>(i, j)[1] = planes.at<Vec2f>(i, j)[0] * copy.at<Vec2f>(i, j)[1] + planes.at<Vec2f>(i, j)[1] * copy.at<Vec2f>(i, j)[0];
+		}
+	}
+	Mat result = iforier(planes1);
+	return result;
+}
+
+//Mat releast( Mat move, double gama, double a, double b, double T,double delta,double threshold)
+//{
+//	double r = 0,count=0;
+//	double gamachange = gama;
+//	Mat least = doleast(move, gama, a, b, T);
+//	Mat guess = moveblur(least, a, b, T);
+//	Mat div(guess.rows, guess.cols, CV_32FC1);
+//	Mat newleast;
+//	for (int i = 0; i < div.rows; i++)
+//	{
+//		for (int j = 0; j< div.cols; j++)
+//		{
+//			div.at<float>(i, j) = guess.at<uchar>(i, j) - move.at<uchar>(i, j);
+//			r += pow(div.at<float>(i, j), 2);
+//		}
+//	}
+//	if (abs(r - div.rows*div.cols*delta*delta) < threshold)
+//	{
+//		cout << r << '\n';
+//		return least;
+//	}
+//	else
+//	{
+//		while (abs(r - div.rows*div.cols*delta*delta) > threshold)
+//		{
+//			r = 0;
+//			if (r < div.rows*div.cols*delta*delta - threshold) gamachange += 10000;
+//			if (r > div.rows*div.cols*delta*delta + threshold) gamachange -= 10000;
+//			newleast = doleast(move, gamachange, a, b, T);
+//			guess = moveblur(newleast, a, b, T);
+//			for (int i = 0; i < div.rows; i++)
+//			{
+//				for (int j = 0; j<div.cols; j++)
+//				{
+//					div.at<float>(i, j) = guess.at<uchar>(i, j) - move.at<uchar>(i, j);
+//					r += pow(div.at<float>(i, j), 2);
+//				}
+//			}
+//			cout << count++ << ' ' << gamachange << ' ' << r << ' ' << div.rows*div.cols*delta*delta << ' ' << abs(r - div.rows*div.cols*delta*delta) << '\n';
+//		}
+//		cout << r << '\n';
+//		return newleast;
+//	}
+//
+//}
+
+int main()
+{
+	Mat src = imread("E:\\课件\\图像\\第6次作业\\lena.bmp", IMREAD_GRAYSCALE);
+	//Mat result = addgauss(src, 10, 30);
+	//Mat butt1 = buttworth(result, 2, 80, 1);
+	//Mat pgaus1 = pgaussian(result, 80, 1);
+	//Mat gauss1 = gaussian(result, 9, 2);
+	//Mat med1 = medium(result, 9);
+	//imwrite("E:\\课件\\图像\\第6次作业\\结果\\1\\gaussnois.bmp", result);
+	//imwrite("E:\\课件\\图像\\第6次作业\\结果\\1\\butt1.bmp", butt1);
+	//imwrite("E:\\课件\\图像\\第6次作业\\结果\\1\\pgaus1.bmp", pgaus1);
+	//imwrite("E:\\课件\\图像\\第6次作业\\结果\\1\\gauss1.bmp", gauss1);
+	//imwrite("E:\\课件\\图像\\第6次作业\\结果\\1\\med1.bmp", med1);
+	/*Mat ps = pep_salt(src, 0.1);*/
+	//Mat butt2 = buttworth(ps, 2, 80, 1);
+	//Mat pgaus2 = pgaussian(ps, 80, 1);
+	//Mat gauss2 = gaussian(ps, 9, 2);
+	//Mat med2 = medium(ps, 9);
+
+	//imwrite("E:\\课件\\图像\\第6次作业\\结果\\1\\pepnoise.bmp", ps);
+	//imwrite("E:\\课件\\图像\\第6次作业\\结果\\1\\butt2.bmp", butt2);
+	//imwrite("E:\\课件\\图像\\第6次作业\\结果\\1\\pgaus2.bmp", pgaus2);
+	//imwrite("E:\\课件\\图像\\第6次作业\\结果\\1\\gauss2.bmp", gauss2);
+	//imwrite("E:\\课件\\图像\\第6次作业\\结果\\1\\med2.bmp", med2);
+
+
+	//Mat inv = inversemean(ps, 3,-1);
+	//imwrite("E:\\课件\\图像\\第6次作业\\结果\\1\\inv11.bmp", inv);
+
+	//imshow("1", inv);
+	/*Mat move = moveblur(src, 0.03, 0.03, 1, 0, 10);*/
+	/*Mat result1 = dowiner(src, 0.001, 0.03, 0.03, 1,0,10);*/
+	/*Mat result = rewiner(src,1, 1, 0.03, 0.03, 1,0.0001,0,10);*/
+	////Mat result = releast(movegauss, 500, 0.3, 0.3, 1, 10, 10);
+	Mat result = doleast(src, 0.071, 0.3, 0.3, 1, 0, 10);
+	imshow("1", result);
+	imwrite("E:\\课件\\图像\\第6次作业\\结果\\least.bmp", result);
+	/*imshow("2", result);*/
+	/*imwrite("E:\\课件\\图像\\第6次作业\\结果\\blur.bmp", move);*/
+	waitKey(0);
+	return 0;
+}
